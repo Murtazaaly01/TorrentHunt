@@ -30,13 +30,12 @@ app = web.Application()
 
 # Process webhook calls
 async def handle(request):
-    if request.match_info.get('token') == bot.token:
-        request_body_dict = await request.json()
-        update = telebot.types.Update.de_json(request_body_dict)
-        bot.process_new_updates([update])
-        return web.Response()
-    else:
+    if request.match_info.get('token') != bot.token:
         return web.Response(status=403)
+    request_body_dict = await request.json()
+    update = telebot.types.Update.de_json(request_body_dict)
+    bot.process_new_updates([update])
+    return web.Response()
 
 app.router.add_post('/{token}/', handle)
 
@@ -54,13 +53,12 @@ def getSuggestions(query):
     )
 
     response = requests.get('https://www.google.com/complete/search', headers=headers, params=params)
-    
+
     return literal_eval(response.text)[1]
 
 #: Sort list according to the length of elements
 def sortList(lst):
-    lst2 = sorted(lst, key=len)
-    return lst2
+    return sorted(lst, key=len)
 
 # Main reply keyboard
 def mainReplyKeyboard(userLanguage):
@@ -113,7 +111,7 @@ def categoryReplyKeyboard(userLanguage, allCategories, restrictedMode):
 def isSubscribed(message, userLanguage=None, sendMessage=True):
     telegramId = message.from_user.id
     subscribed = True
-    
+
     try:
         status = bot.get_chat_member('-1001270853324', telegramId)
         if status.status == 'left':
@@ -131,11 +129,20 @@ def isSubscribed(message, userLanguage=None, sendMessage=True):
         return False
 
 def notSubscribedMarkup(userLanguage):
-    markup = telebot.types.InlineKeyboardMarkup([
-            [telebot.types.InlineKeyboardButton(text=language['subscribeChannelBtn'][userLanguage], url='https://www.youtube.com/h9youtube?sub_confirmation=1'),
-            telebot.types.InlineKeyboardButton(text=language['joinChannelBtn'][userLanguage], url='https://t.me/h9youtube')]
-            ])
-    return markup
+    return telebot.types.InlineKeyboardMarkup(
+        [
+            [
+                telebot.types.InlineKeyboardButton(
+                    text=language['subscribeChannelBtn'][userLanguage],
+                    url='https://www.youtube.com/h9youtube?sub_confirmation=1',
+                ),
+                telebot.types.InlineKeyboardButton(
+                    text=language['joinChannelBtn'][userLanguage],
+                    url='https://t.me/h9youtube',
+                ),
+            ]
+        ]
+    )
 
 
 # Returns the equivalent category of the text 
@@ -178,7 +185,7 @@ def result(response, userLanguage, torrentType, page, category=None, week=None, 
     markup = telebot.types.InlineKeyboardMarkup()
     markup.one_time_keyboard=True
     markup.row_width = 5
-    
+
     msg =''
     if response['items']:
         response['items'].reverse()
@@ -197,19 +204,19 @@ def result(response, userLanguage, torrentType, page, category=None, week=None, 
         # Trending, popular and top torrents has more than 20 items in the same page
         if torrentType in ['trending', 'popular', 'top']:
             if response['itemCount'] > 20:
-                buttons =  []
-                for i in range(1, -(-response['itemCount'] // 20)+1):
-                    buttons.append(telebot.types.InlineKeyboardButton('🔘' if i == page else i, callback_data=f"cb_nextPage{time()}:{i}:{torrentType}-{category}-{week}:{query or ''}"))
+                buttons = [
+                    telebot.types.InlineKeyboardButton(
+                        '🔘' if i == page else i,
+                        callback_data=f"cb_nextPage{time()}:{i}:{torrentType}-{category}-{week}:{query or ''}",
+                    )
+                    for i in range(1, -(-response['itemCount'] // 20) + 1)
+                ]
 
                 markup.add(*buttons)
 
-        # For other category, create page according to pageCount
         elif pageCount > 1:
             # FirstPage is the firstPage in a page list. Eg: FirstPage of (1 to 10) is 1, (11 to 20) is 11.
-            firstPage = 1
-            for i in range(-(-page // 10)-1):
-                firstPage += 10
-            
+            firstPage = 1 + sum(10 for _ in range(-(-page // 10)-1))
             buttons =  []
             for i in range(firstPage, pageCount+1):
                 # Show 10 buttons at once
@@ -217,7 +224,7 @@ def result(response, userLanguage, torrentType, page, category=None, week=None, 
                     break
                 cb = f"q{str(time())[-3:]}:{i}:{query}" if query else f"cb_nextPage{time()}:{i}:{torrentType}-{category}-{week}:{query or ''}"
                 buttons.append(telebot.types.InlineKeyboardButton('🔘' if i == page else i, callback_data=cb))
-            
+
             markup.add(*buttons)
             if pageCount > 10:
                 if page <= 10:
@@ -229,19 +236,25 @@ def result(response, userLanguage, torrentType, page, category=None, week=None, 
                     cb2 = f"q{str(time())[-3:]}:{firstPage+10}:{query}" if query else f"cb_nextPage{time()}:{firstPage+10}:{torrentType}-{category}-{week}"
 
                     markup.add(telebot.types.InlineKeyboardButton(language['previousBtn'][userLanguage], callback_data=cb1), telebot.types.InlineKeyboardButton(language['nextBtn'][userLanguage], callback_data=cb2))
-                
+
                 else:
                     cb = f"q{str(time())[-3:]}:{firstPage-10}:{query}" if query else f"cb_nextPage{time()}:{firstPage-10}:{torrentType}-{category}-{week}"
                     markup.add(telebot.types.InlineKeyboardButton(language['previousBtn'][userLanguage], callback_data=cb))                      
-                        
+
     if query:
         markup.add(telebot.types.InlineKeyboardButton(text='Pirate Bay 🔎', switch_inline_query_current_chat=f"!pb {query}"), telebot.types.InlineKeyboardButton(text='Nyaa 🔎', switch_inline_query_current_chat=f"!nyaa {query}"))
     elif torrentType == 'top':
-        markup.add(telebot.types.InlineKeyboardButton(text='Pirate Bay 🔎', switch_inline_query_current_chat=f"!pb --top"))
+        markup.add(
+            telebot.types.InlineKeyboardButton(
+                text='Pirate Bay 🔎',
+                switch_inline_query_current_chat="!pb --top",
+            )
+        )
+
     if msg:
         #markup.add(telebot.types.InlineKeyboardButton(text=language['donateBtn'][userLanguage], url='https://buymeacoffee.com/hemantapkh'))
         markup.add(telebot.types.InlineKeyboardButton(text='🌟 Rate ', url='https://t.me/tlgrmcbot?start=torrenthuntbot-review'))
-    
+
     return msg, markup
 
 # Start handler
@@ -310,8 +323,19 @@ def lang(message, userLanguage, called=False, greet=False):
 def browse(message,userLanguage, torrentType=None, referred=False, customMessage=None):
     #if referred or isSubscribed(message, userLanguage):
     torrentType = torrentType or message.text.split()[0][1:]
-    
-    sent = bot.send_message(message.chat.id, text=customMessage or language['selectCategory'][userLanguage], reply_markup=categoryReplyKeyboard(userLanguage, allCategories=False if torrentType in ['browse', 'popular'] else True, restrictedMode=dbSql.getSetting(message.from_user.id, 'restrictedMode')))
+
+    sent = bot.send_message(
+        message.chat.id,
+        text=customMessage or language['selectCategory'][userLanguage],
+        reply_markup=categoryReplyKeyboard(
+            userLanguage,
+            allCategories=torrentType not in ['browse', 'popular'],
+            restrictedMode=dbSql.getSetting(
+                message.from_user.id, 'restrictedMode'
+            ),
+        ),
+    )
+
     bot.register_next_step_handler(sent, browse2, userLanguage, torrentType)
 
 # Next step handler for trending, popular, top and browse torrents
@@ -319,51 +343,55 @@ def browse2(message, userLanguage, torrentType, category=None, customMessage=Non
     # Main menu
     if message.text == language['mainMenuBtn'][userLanguage]:
         bot.send_message(message.chat.id, text=language['backToMenu'][userLanguage], reply_markup=mainReplyKeyboard(userLanguage))
-    else:
-        category = category or textToCategory(message.text, userLanguage)
-        if category:
-            # Send time keyboard if trending and popular torrents
-            if torrentType in ['trending', 'popular']:
-                keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+    elif category := category or textToCategory(message.text, userLanguage):
+        # Send time keyboard if trending and popular torrents
+        if torrentType in ['trending', 'popular']:
+            keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
 
-                button1 = telebot.types.KeyboardButton(text=language['trendingToday' if torrentType == 'trending' else 'popularToday'][userLanguage])
-                button2 = telebot.types.KeyboardButton(text=language['trendingThisWeek' if torrentType == 'trending' else 'popularThisWeek'][userLanguage])
-                button3 = telebot.types.KeyboardButton(text=language['backBtn'][userLanguage])
-                button4 = telebot.types.KeyboardButton(text=language['mainMenuBtn'][userLanguage])
+            button1 = telebot.types.KeyboardButton(text=language['trendingToday' if torrentType == 'trending' else 'popularToday'][userLanguage])
+            button2 = telebot.types.KeyboardButton(text=language['trendingThisWeek' if torrentType == 'trending' else 'popularThisWeek'][userLanguage])
+            button3 = telebot.types.KeyboardButton(text=language['backBtn'][userLanguage])
+            button4 = telebot.types.KeyboardButton(text=language['mainMenuBtn'][userLanguage])
 
-                keyboard.row(button1)
-                keyboard.row(button2)
-                keyboard.row(button3, button4)
+            keyboard.row(button1)
+            keyboard.row(button2)
+            keyboard.row(button3, button4)
 
-                sent = bot.send_message(message.chat.id, text=customMessage or language['selectTimePeriod'][userLanguage], reply_markup=keyboard)
-                bot.register_next_step_handler(sent, browse3, userLanguage, torrentType, category)
-            else:
-                browse4(message, userLanguage, torrentType, category)
+            sent = bot.send_message(message.chat.id, text=customMessage or language['selectTimePeriod'][userLanguage], reply_markup=keyboard)
+            bot.register_next_step_handler(sent, browse3, userLanguage, torrentType, category)
         else:
-            browse(message, userLanguage, torrentType,referred=True, customMessage=language['unknownCategory'][userLanguage])
+            browse4(message, userLanguage, torrentType, category)
+    else:
+        browse(message, userLanguage, torrentType,referred=True, customMessage=language['unknownCategory'][userLanguage])
 
 # Next step handler for trending and popular torrents
 def browse3(message, userLanguage, torrentType, category):
     # Main menu
     if message.text == language['mainMenuBtn'][userLanguage]:
         bot.send_message(message.chat.id, text=language['backToMenu'][userLanguage], reply_markup=mainReplyKeyboard(userLanguage))
-    # Back
     elif message.text == language['backBtn'][userLanguage]:
         browse(message,userLanguage, torrentType, referred=True)
     else:
-        week = True if message.text == language[torrentType+'ThisWeek'][userLanguage] else False if message.text == language[torrentType+'Today'][userLanguage] else None
-        
+        week = (
+            True
+            if message.text == language[f'{torrentType}ThisWeek'][userLanguage]
+            else False
+            if message.text == language[f'{torrentType}Today'][userLanguage]
+            else None
+        )
+
+
         # If week is None, return to browse2
-        if week == None:
+        if week is None:
             browse2(message, userLanguage, torrentType, category, customMessage=language['unknownTimePeriod'][userLanguage])
-        
+
         else:
             bot.send_message(message.chat.id, text=language['fetchingTorrents'][userLanguage], reply_markup=mainReplyKeyboard(userLanguage))
-           
+
             response =  getattr(torrent, torrentType)(category=None if category == 'all' else category, week=week)
 
             msg, markup = result(response, userLanguage, torrentType, 1, category, week)
-            
+
             bot.send_message(chat_id=message.chat.id, text=msg or language['emptyPage'][userLanguage], reply_markup=markup)
 
 # Next step handler for top and browse torrents
@@ -415,7 +443,7 @@ def getLink(message):
 def getInfo(message):
     userLanguage = dbSql.getSetting(message.from_user.id, 'language')
     sent = bot.send_message(message.chat.id, text=language['fetchingTorrentInfo'][userLanguage])
-    
+
     torrentId = message.text[9:]
     response = torrent.info(torrentId=torrentId)
     markup = None
@@ -428,22 +456,23 @@ def getInfo(message):
         else:
             genre = '\n\n'+', '.join(response['genre']) if response['genre'] else None
             description = '\n'+response['description'] if genre and response['description'] else '\n\n'+response['description'] if response['description'] else None
-            msg = f"<b>✨ {response['name']}</b>\n\n{language['category'][userLanguage]} {response['category']}\n{language['language'][userLanguage]} {response['language']}\n{language['size'][userLanguage]} {response['size']}\n{language['uploadedBy'][userLanguage]} {response['uploader']}\n{language['downloads'][userLanguage]} {response['downloads']}\n{language['lastChecked'][userLanguage]} {response['lastChecked']}\n{language['uploadedOn'][userLanguage]} {response['uploadDate']}\n{language['seeders'][userLanguage]} {response['seeders']}\n{language['leechers'][userLanguage]} {response['leechers']}{'<b>'+genre+'</b>' if genre else ''}{'<code>'+description+'</code>' if description else ''}\n\n{language['link'][userLanguage]} /getLink_{torrentId}\n\n<b>🔥via @TorrentHuntBot</b>"
-            
+            msg = f"<b>✨ {response['name']}</b>\n\n{language['category'][userLanguage]} {response['category']}\n{language['language'][userLanguage]} {response['language']}\n{language['size'][userLanguage]} {response['size']}\n{language['uploadedBy'][userLanguage]} {response['uploader']}\n{language['downloads'][userLanguage]} {response['downloads']}\n{language['lastChecked'][userLanguage]} {response['lastChecked']}\n{language['uploadedOn'][userLanguage]} {response['uploadDate']}\n{language['seeders'][userLanguage]} {response['seeders']}\n{language['leechers'][userLanguage]} {response['leechers']}{f'<b>{genre}</b>' if genre else ''}{f'<code>{description}</code>' if description else ''}\n\n{language['link'][userLanguage]} /getLink_{torrentId}\n\n<b>🔥via @TorrentHuntBot</b>"
+
+
             if response['images']:
                 markup.add(telebot.types.InlineKeyboardButton(text=language['imageBtn'][userLanguage], callback_data=f"cb_getImages:{torrentId}"), telebot.types.InlineKeyboardButton(text=language['torrentDownloadBtn'][userLanguage], callback_data=f"cb_getTorrent:{response['infoHash']}:{torrentId}"))
-    
+
             else:
                 markup.add(telebot.types.InlineKeyboardButton(text=language['torrentDownloadBtn'][userLanguage], callback_data=f"cb_getTorrent:{response['infoHash']}:{torrentId}"))
-            
+
             shortUrl = shortner(response['magnetLink'])
-            
+
             markup.add(telebot.types.InlineKeyboardButton(text=language['magnetDownloadBtn'][userLanguage], url=shortUrl))
             markup.add(telebot.types.InlineKeyboardButton(text=language['joinChannelBtn'][userLanguage], url='t.me/h9youtube'), telebot.types.InlineKeyboardButton(text=language['joinDiscussionBtn'][userLanguage], url='t.me/h9discussion'))
             markup.add(telebot.types.InlineKeyboardButton(text=language['addToSeedr'][userLanguage], url=f't.me/torrentseedrbot?start=addTorrent_{shortUrl[20:]}'))
     else:
         msg = language['errorFetchingInfo'][userLanguage]  
-        
+
     bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=msg, reply_markup=markup)
 
 # Broadcast message
@@ -459,18 +488,17 @@ def broadcast(message):
 def broadcast2(message):
     if message.text == '/cancel':
         bot.send_message(chat_id=message.chat.id, text='❌ Broadcast cancelled')
+    elif message.text == '/all':
+        sent = bot.send_message(chat_id=message.chat.id, text='<b>Choose the audience to exclude from broadcasting.</b>\n\n<code>bengali</code>, <code>belarusian</code>, <code>catalan</code>, <code>dutch</code>, <code>english</code>, <code>french</code>, <code>german</code>, <code>hindi</code>, <code>italian</code>, <code>korean</code>, <code>malay</code>, <code>nepali</code>, <code>polish</code>, <code>portuguese</code>, <code>russian</code>, <code>spanish</code>, <code>turkish</code>, <code>ukrainian</code> \n\n<b>Separate by comma for multiple exclusion.</b>\n\n/cancel to cancel the broadcast.\n/skip to Skip the exclusion.')
+        bot.register_next_step_handler(sent, broadcastExclusion)
+
+    elif message.text in ['/bengali', '/belarusian', '/catalan', '/dutch', '/english', '/french', '/german', '/hindi', '/italian', '/korean', '/malay', '/nepali', '/polish', '/portuguese', '/russian', '/spanish', '/turkish', '/ukrainian']:
+        audience = message.text[1:]
+        sent = bot.send_message(chat_id=message.chat.id, text='<b>Send the message to broadcast.</b>\n\nMarkup: HTML\nTags allowed: a href, b, i, u, s, code, pre, h1, inv, br\n\n/cancel to cancel the broadcast.')
+        bot.register_next_step_handler(sent, broadcast3, audience)
+
     else:
-        if message.text == '/all':
-            sent = bot.send_message(chat_id=message.chat.id, text='<b>Choose the audience to exclude from broadcasting.</b>\n\n<code>bengali</code>, <code>belarusian</code>, <code>catalan</code>, <code>dutch</code>, <code>english</code>, <code>french</code>, <code>german</code>, <code>hindi</code>, <code>italian</code>, <code>korean</code>, <code>malay</code>, <code>nepali</code>, <code>polish</code>, <code>portuguese</code>, <code>russian</code>, <code>spanish</code>, <code>turkish</code>, <code>ukrainian</code> \n\n<b>Separate by comma for multiple exclusion.</b>\n\n/cancel to cancel the broadcast.\n/skip to Skip the exclusion.')
-            bot.register_next_step_handler(sent, broadcastExclusion)
-        
-        elif message.text in ['/bengali', '/belarusian', '/catalan', '/dutch', '/english', '/french', '/german', '/hindi', '/italian', '/korean', '/malay', '/nepali', '/polish', '/portuguese', '/russian', '/spanish', '/turkish', '/ukrainian']:
-            audience = message.text[1:]
-            sent = bot.send_message(chat_id=message.chat.id, text='<b>Send the message to broadcast.</b>\n\nMarkup: HTML\nTags allowed: a href, b, i, u, s, code, pre, h1, inv, br\n\n/cancel to cancel the broadcast.')
-            bot.register_next_step_handler(sent, broadcast3, audience)
-        
-        else:
-            bot.send_message(chat_id=message.chat.id, text='❌ Unknown audience. Broadcast cancelled.')
+        bot.send_message(chat_id=message.chat.id, text='❌ Unknown audience. Broadcast cancelled.')
 
 def broadcastExclusion(message):
     if message.text == '/skip':
@@ -496,18 +524,15 @@ def broadcast4(message, audience, exclude, textMessage):
     markup = telebot.types.InlineKeyboardMarkup()
     if message.text == '/cancel':
         bot.send_message(chat_id=message.chat.id, text='❌ Broadcast cancelled')
-    
+
     elif message.text == '/skip':
         if audience == 'all':
-            if exclude:
-                users = dbSql.getUsersExcept(exclude)
-            else:
-                users = dbSql.getAllUsers()
+            users = dbSql.getUsersExcept(exclude) if exclude else dbSql.getAllUsers()
         else:
             users = dbSql.getUsers(audience)
-        
+
         users = len(users) if users else 0
-        
+
         try:
             bot.send_message(message.chat.id, text=f'<b>Message Preview</b>\n\n{textMessage}',)
             sent = bot.send_message(message.chat.id, text=f"/send to broadcast this message.\n\nTarget Audience: {audience}\nExcluded Audience: {' '.join(exclude) if exclude else None}\nTotal audience: {users}")
@@ -517,23 +542,20 @@ def broadcast4(message, audience, exclude, textMessage):
 
     else:
         if audience == 'all':
-            if exclude:
-                users = dbSql.getUsersExcept(exclude)
-            else:
-                users = dbSql.getAllUsers()
+            users = dbSql.getUsersExcept(exclude) if exclude else dbSql.getAllUsers()
         else:
             users = dbSql.getUsers(audience)
-        
+
         users = len(users) if users else 0
 
         try:
             for i in message.text.split('\n'):
                 markup.add(telebot.types.InlineKeyboardButton(text=i.split('->')[0].strip(), url=i.split('->')[1].strip()))
-        
+
             bot.send_message(message.chat.id, text=f'<b>Message Preview</b>\n\n{textMessage}', reply_markup=markup)
             sent = bot.send_message(message.chat.id, text=f"/send to broadcast this message.\n\nTarget Audience: {audience}\nExcluded Audience: {' '.join(exclude) if exclude else None}\nTotal audience: {users}")
             bot.register_next_step_handler(sent, broadcast5, audience, exclude, textMessage, markup)
-        
+
         except Exception as e:
             bot.send_message(message.chat.id, text=f"<b>⚠️ Error</b>\n\n{str(e).replace('<','')}")
 
@@ -541,23 +563,20 @@ def broadcast5(message, audience, exclude, textMessage, markup):
     if message.text == '/send':
         sent = bot.send_message(chat_id=message.chat.id, text='<code>Broadcasting message</code>')
         if audience == 'all':
-            if exclude:
-                users = dbSql.getUsersExcept(exclude)
-            else:
-                users = dbSql.getAllUsers()
+            users = dbSql.getUsersExcept(exclude) if exclude else dbSql.getAllUsers()
         else:
             users = dbSql.getUsers(audience)
-        failure = 0
-        success = 0
         updateCount = 0
 
         if users:
+            failure = 0
+            success = 0
             for userId in users:
                 try:
                     bot.send_message(chat_id=userId, text=textMessage, reply_markup=markup)
                     success += 1
                     updateCount += 1
-                
+
                 except Exception:
                     failure += 1
                     updateCount += 1
@@ -570,7 +589,12 @@ def broadcast5(message, audience, exclude, textMessage, markup):
 
             bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=f'<b>✈️ Broadcast Report</b>\n\nSuccess: {success}\nFailure: {failure}')
         else:
-            bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=f'❌ No user to broadcast message.')
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=sent.message_id,
+                text='❌ No user to broadcast message.',
+            )
+
     else:
         bot.send_message(chat_id=message.chat.id, text='❌ Broadcast cancelled')
 
@@ -579,17 +603,23 @@ def broadcast5(message, audience, exclude, textMessage, markup):
 def stats(message):
     if message.from_user.id == int(config['adminId']):
         languageSet = ["english", "nepali", "bengali", "belarusian", "catalan", "dutch",  "french",  "german", "hindi", "italian", "korean", "malay", "polish", "portuguese", "russian", "spanish", "turkish", "ukrainian"]
-        
+
         msg = f'<b>📊 Statistics</b>\n\n'
-        
-        languageStats = {}
-        for i in languageSet:
-            languageStats[i.capitalize()] = len(dbSql.getUsers(i)) if dbSql.getUsers(i) else 0
 
-        languageStats = {k: v for k, v in sorted(languageStats.items(), key=lambda item: item[1], reverse=True)}
+        languageStats = {
+            i.capitalize(): len(dbSql.getUsers(i)) if dbSql.getUsers(i) else 0
+            for i in languageSet
+        }
 
-        for i in languageStats:
-            msg += f'{i}: {languageStats[i]}\n'
+        languageStats = dict(
+            sorted(
+                languageStats.items(), key=lambda item: item[1], reverse=True
+            )
+        )
+
+
+        for i, value in languageStats.items():
+            msg += f'{i}: {value}\n'
 
         msg += f'\n<b>Total users: {len(dbSql.getAllUsers()) if dbSql.getAllUsers() else 0}</b>'
         bot.send_message(chat_id=message.chat.id, text=msg)
@@ -606,64 +636,59 @@ def text(message):
     # Don't search if the message is via bot
     if 'via_bot' in message.json.keys() and message.json['via_bot']['id'] == 1700458114:
         pass
-    
-    # Main menu
+
     elif message.text == language['mainMenuBtn'][userLanguage]:
         bot.send_message(message.chat.id, text=language['backToMenu'][userLanguage], reply_markup=mainReplyKeyboard(userLanguage))
-    
-    # Trending torrents
+
     elif message.text in ['/trending', language['trendingBtn'][userLanguage]]:
         browse(message, userLanguage, 'trending')
 
-    # Popular torrents
     elif message.text in ['/popular', language['popularBtn'][userLanguage]]:
         browse(message, userLanguage, 'popular')
-        
-    # Top torrents
+
     elif message.text in ['/top', language['topBtn'][userLanguage]]:
         browse(message, userLanguage, 'top')
-    
-    # Browse torrents
+
     elif message.text in ['/browse', language['browseBtn'][userLanguage]]:
         browse(message, userLanguage, 'browse')
 
-    # Settings
     elif message.text in ['/settings', language['settingsBtn'][userLanguage]]:
         settings(message, userLanguage)
 
-    # Help
     elif message.text in ['/help', language['helpBtn'][userLanguage]]:
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(telebot.types.InlineKeyboardButton(text=language['inlineSearchBtn'][userLanguage], switch_inline_query_current_chat=""))
         bot.send_message(message.chat.id, language['help'][userLanguage].format(language['helpBtn'][userLanguage]), reply_markup=markup)
 
-    # Support
     elif message.text in ['/support', language['supportBtn'][userLanguage]]:
         markup = telebot.types.InlineKeyboardMarkup()
         markup.add(telebot.types.InlineKeyboardButton(text=language['joinChannelBtn'][userLanguage], url='t.me/h9youtube'))
         markup.add(telebot.types.InlineKeyboardButton(text=language['shareWithFriendsBtn'][userLanguage], url=f"https://t.me/share/url?url=t.me/torrenthuntbot&text={language['shareText'][userLanguage]}"), telebot.types.InlineKeyboardButton(text=language['joinDiscussionBtn'][userLanguage], url='t.me/h9discussion'))
         markup.add(telebot.types.InlineKeyboardButton(text=language['subscribeChannelBtn'][userLanguage], url='https://youtube.com/h9youtube'), telebot.types.InlineKeyboardButton(text=language['followGithubBtn'][userLanguage], url='https://github.com/hemantapkh'))
-        markup.add(telebot.types.InlineKeyboardButton(text=language['donateBtn'][userLanguage], url=f"https://buymeacoffee.com/hemantapkh"))
-        
+        markup.add(
+            telebot.types.InlineKeyboardButton(
+                text=language['donateBtn'][userLanguage],
+                url="https://buymeacoffee.com/hemantapkh",
+            )
+        )
+
+
         bot.send_message(message.from_user.id, language['support'][userLanguage].format(language['supportBtn'][userLanguage]), reply_markup=markup, disable_web_page_preview=True)
-    
-    # Query search
+
     else:
         #if isSubscribed(message, userLanguage):
         sent = bot.send_message(message.chat.id, language['searchingQuery'][userLanguage].format(message.text))
         response = torrent.search(message.text)
 
         msg, markup = result(response, userLanguage, torrentType='query', page=1, query=message.text)
-        
+
         if not msg:
             try:
-                suggestion = getSuggestions(message.text)
-                
-                if suggestion:
+                if suggestion := getSuggestions(message.text):
                     if suggestion[0] != message.text:
                         bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=language['searchingQuery'][userLanguage].format(suggestion[0]))
                         response = torrent.search(suggestion[0])
-                        
+
                         msg, markup = result(response, userLanguage, torrentType='query', page=1, query=suggestion[0])
 
                     if not msg:
@@ -671,30 +696,30 @@ def text(message):
                         suggestion = sortList(suggestion)
                         buttons = []
                         smallButtons = []
-                        
+
                         for i in suggestion[1:]:
                             suggestedQuery = base64.b64encode(i.encode()).decode()
                             if len(suggestedQuery) <= 64:
 
                                 if len(i) < 13:
                                     smallButtons.append(telebot.types.InlineKeyboardButton(text=i, url=f"https://t.me/torrenthuntbot?start={suggestedQuery}"))
-                                
+
                                 elif len(i) < 18:
                                     buttons.append(telebot.types.InlineKeyboardButton(text=i, url=f"https://t.me/torrenthuntbot?start={suggestedQuery}"))
-                                
+
                                 else:
                                     markup.add(telebot.types.InlineKeyboardButton(text=i, url=f"https://t.me/torrenthuntbot?start={suggestedQuery}"))
 
-                        
+
                         markup.add(*smallButtons)
                         markup.row_width = 2
                         markup.add(*buttons)
-                        
+
                     bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=msg or language['noResults'][userLanguage], reply_markup=markup)
-                
+
                 else:
                     bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=language['noResults'][userLanguage], reply_markup=markup)
-            
+
             except Exception as e:
                 bot.edit_message_text(chat_id=message.chat.id, message_id=sent.message_id, text=language['noResults'][userLanguage], reply_markup=markup)
         else:
@@ -704,7 +729,7 @@ def text(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callbackHandler(call):
     userLanguage = dbSql.getSetting(call.from_user.id, 'language')
-    # Next page for query 
+    # Next page for query
     if call.data[:1] == 'q':
         splittedData = call.data.split(':', 2)
         page = int(splittedData[1])
@@ -716,12 +741,11 @@ def callbackHandler(call):
         msg, markup = result(response, userLanguage, torrentType, page=page, query=query)
 
         # 1337x may return empty response sometime. So, changing the case to prevent this.
-        if not msg and query.islower():
-            response = torrent.search(query.capitalize(), page=page)
-            msg, markup = result(response, userLanguage, torrentType, page=page, query=query)
-        
-        elif not msg:
-            response = torrent.search(query.lower(), page=page)
+        if not msg:
+            if query.islower():
+                response = torrent.search(query.capitalize(), page=page)
+            else:
+                response = torrent.search(query.lower(), page=page)
             msg, markup = result(response, userLanguage, torrentType, page=page, query=query)
 
         if msg:
@@ -737,78 +761,70 @@ def callbackHandler(call):
         torrentType = splittedData[2].split('-')[0]
         category =  splittedData[2].split('-')[1]
         week =  splittedData[2].split('-')[2]
-        
+
         # Next page for trending and popular torrents
         if torrentType in ['trending', 'popular']:
-            response =  getattr(torrent, torrentType)(category=None if category == 'all' else category, week=True if week == 'True' else False)
-            
+            response = getattr(torrent, torrentType)(
+                category=None if category == 'all' else category,
+                week=week == 'True',
+            )
+
+
             del response['items'][:(page-1)*20]
-            msg, markup = result(response, userLanguage, torrentType, page=page, category=category)
-        
-        # Next page for top torrents
         elif torrentType == 'top':
             response =  getattr(torrent, torrentType)(category=None if category == 'all' else category)
-            
-            del response['items'][:(page-1)*20]
-            msg, markup = result(response, userLanguage, torrentType, page=page, category=category)
 
-        # Next page for browse torrents
+            del response['items'][:(page-1)*20]
         else:
             response =  getattr(torrent, torrentType)(category=None if category == 'all' else category, page=page)
 
-            msg, markup = result(response, userLanguage, torrentType, page=page, category=category)
+        msg, markup = result(response, userLanguage, torrentType, page=page, category=category)
 
         if msg:
             bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.id, text=msg, reply_markup=markup)
         # If msg is None
         else:
             bot.answer_callback_query(call.id, text=language['emptyPage'][userLanguage], show_alert=True)
-    
-    # Check whether a user is subscribed or not after clicking done button
+
     elif call.data == 'cb_checkSubscription':
         if isSubscribed(call, None, sendMessage=False):
             bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.id, text=language['thanksForSub'][userLanguage])
         else:
             bot.answer_callback_query(call.id, language['notSubscribedCallback'][userLanguage])
 
-    # Language settings
     elif call.data[:18] == 'cb_languageSetting':
         lang(call, userLanguage, called=True)
 
-    # Select language
     elif call.data[:12] == 'cb_language_':
         greet = call.data.split('_')[2]
         userLanguage = call.data.split('_')[3]
 
         dbSql.setSetting(call.from_user.id, 'language', userLanguage)
-        
+
         if greet == 'True':
             bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.id)
             bot.send_message(chat_id=call.message.chat.id, text=language['greet'][userLanguage].format(call.from_user.first_name), reply_markup=mainReplyKeyboard(userLanguage))
-        
+
         else:
             bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.id)
             bot.send_message(chat_id=call.message.chat.id, text=language['languageSelected'][userLanguage], reply_markup=mainReplyKeyboard(userLanguage))
 
-    # Content filter setting
     elif call.data[:17] == 'cb_restrictedMode':
         restrictedMode = 1 if call.data[17:] == 'On' else 0
         dbSql.setSetting(call.from_user.id, 'restrictedMode', restrictedMode)
-        
+
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.id, text=language['restrictedModeOn' if restrictedMode else 'restrictedModeOff'][userLanguage])
 
-    # Back to settings
     elif call.data[:17] == 'cb_backToSettings':
         settings(call, userLanguage, called=True)
 
-    # Download .Torrent file
     elif call.data[:14] == 'cb_getTorrent:':
         infoHash = call.data.split(':')[1]
         torrentId = call.data.split(':')[2]
 
         headers = {'user-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:15.0) Gecko/20100101 Firefox/15.0.1'}
         response = requests.get(f'http://itorrents.org/torrent/{infoHash}.torrent', headers=headers)
-        
+
         if response.ok and not response.content.startswith(b'<!DOCTYPE html PUBLIC'):
             bot.answer_callback_query(call.id)
             bot.send_chat_action(call.message.chat.id, 'upload_document')
@@ -820,14 +836,14 @@ def callbackHandler(call):
 
             open(f"/TorrentHuntTmp/{call.from_user.id}/{torrentInfo['infoHash']}.torrent", 'wb').write(response.content)
             thumbnail = requests.get(torrentInfo['thumbnail']) if torrentInfo['thumbnail'] else None
-            
+
             data = open(f"/TorrentHuntTmp/{call.from_user.id}/{torrentInfo['infoHash']}.torrent", 'rb')
 
             # Deleting the file
             remove(f"/TorrentHuntTmp/{call.from_user.id}/{torrentInfo['infoHash']}.torrent")
 
             bot.send_document(call.message.chat.id, data=data, caption=f"{torrentInfo['name']}\n\n{language['size'][userLanguage]}{torrentInfo['size']}\n{language['seeders'][userLanguage]}{torrentInfo['seeders']}\n{language['leechers'][userLanguage]}{torrentInfo['leechers']}\n\n<b>🔥via @TorrentHuntBot</b>", thumb=thumbnail.content if thumbnail else None)
-        
+
         # Torrent file not found in itorrents
         else:
             bot.answer_callback_query(call.id, text=language['fileNotFound'][userLanguage], show_alert=True)
@@ -838,7 +854,7 @@ def callbackHandler(call):
         torrentId = call.data[13:]
         response = torrent.info(torrentId=torrentId)
         media = []
-        
+
         try:
             if len(response['images']) >= 2:
                 for image in response['images']:
@@ -846,12 +862,12 @@ def callbackHandler(call):
                     if len(media) > 6:
                         bot.send_media_group(call.message.chat.id, media)
                         media = []
-                
+
                 if media:
                     bot.send_media_group(call.message.chat.id, media)
             else:
                 bot.send_photo(call.message.chat.id, photo=response['images'][0].replace('.th.','.'), caption=f"✨ {response['name']}\n\n{language['moreInfo'][userLanguage]} /getLink_{torrentId}\n{language['link'][userLanguage]} /getLink_{torrentId}\n\n🔥 via @TorrentHuntBot")
-        
+
         except Exception as e:
             bot.send_message(call.message.chat.id, language['errorSendingImage'][userLanguage])
 
